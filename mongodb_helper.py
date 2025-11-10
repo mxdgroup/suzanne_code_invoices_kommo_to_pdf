@@ -77,7 +77,8 @@ class MongoDBHelper:
             if self.collection is None:
                 raise Exception("MongoDB collection not initialized")
             
-            document = self.collection.find_one({"deal_number": deal_number})
+            # deal_number is stored under invoice.deal_number in the document
+            document = self.collection.find_one({"invoice.deal_number": deal_number})
             
             if document:
                 logger.info(f"✓ Found existing invoice for deal number: {deal_number}")
@@ -152,7 +153,7 @@ class MongoDBHelper:
             data_to_update.pop('created_at', None)  # Don't update created_at
             
             result = self.collection.update_one(
-                {"deal_number": deal_number},
+                {"invoice.deal_number": deal_number},
                 {"$set": data_to_update}
             )
             

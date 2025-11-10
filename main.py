@@ -21,6 +21,7 @@ load_dotenv(dotenv_path=env_path)
 # Import invoice generation modules from the same directory
 from generate_invoice import generate_html, calculate_item_totals
 from generate_proforma_invoice import generate_proforma_html, calculate_proforma_totals
+from generate_tax_invoice import generate_tax_invoice_html
 from convert_to_pdf import html_to_pdf
 from mongodb_helper import get_db_helper
 
@@ -117,6 +118,15 @@ class ProformaInvoiceRequest(BaseModel):
     items: List[ProformaItem]
     amount_in_words: str
     recipient_emails: List[EmailStr]  # List of emails to send invoice to
+
+# Tax Invoice Models (for updating proforma to tax invoice)
+class TaxInvoiceInfo(BaseModel):
+    number: str
+    date_of_issuing: str
+    deal_number: str
+
+class TaxInvoiceRequest(BaseModel):
+    invoice: TaxInvoiceInfo
 
 # Token validation
 def verify_token(authorization: Optional[str] = Header(None)):
@@ -399,6 +409,157 @@ async def generate_proforma_invoice(
     except Exception as e:
         logger.error(f"❌ Error generating proforma invoice: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating proforma invoice: {str(e)}")
+
+@app.post("/generate-tax-invoice")
+async def generate_tax_invoice(
+    request: TaxInvoiceRequest,
+    authorized: bool = Depends(verify_token)
+):
+    """
+    Generate PDF tax invoice from existing proforma invoice in MongoDB
+    
+    Fetches proforma invoice by deal_number, updates invoice number and date,
+    generates a TAX INVOICE PDF and sends via email
+    
+    Requires Authorization header with secret token
+    """
+    try:
+        deal_number = request.invoice.deal_number
+        logger.info(f"📄 Generating tax invoice for deal number: {deal_number}")
+        
+        # Fetch proforma invoice from MongoDB
+        db_helper = get_db_helper()
+        proforma_doc = db_helper.find_by_deal_number(deal_number)
+        
+        if not proforma_doc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No proforma invoice found for deal number: {deal_number}"
+            )
+        
+        logger.info(f"✓ Found proforma invoice for deal number: {deal_number}")
+        
+        # Get recipient emails from the stored proforma invoice
+        recipient_emails = proforma_doc.get('recipient_emails', [])
+        if not recipient_emails:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No recipient emails found in proforma invoice for deal number: {deal_number}"
+            )
+        
+        # Update invoice number and date with new values from request
+        proforma_doc['invoice']['number'] = request.invoice.number
+        proforma_doc['invoice']['date_of_issuing'] = request.invoice.date_of_issuing
+        
+        # Remove MongoDB _id and timestamps for processing
+        proforma_doc.pop('_id', None)
+        proforma_doc.pop('created_at', None)
+        proforma_doc.pop('updated_at', None)
+        
+        # Create temporary directory for this invoice
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Generate filenames based on invoice number
+            invoice_number_clean = request.invoice.number.replace("/", "-").replace(" ", "_")
+            json_file = os.path.join(temp_dir, f"{invoice_number_clean}.json")
+            html_file = os.path.join(temp_dir, f"{invoice_number_clean}.html")
+            pdf_file = os.path.join(temp_dir, f"{invoice_number_clean}.pdf")
+            
+            # Save updated JSON to file
+            import json
+            with open(json_file, 'w', encoding='utf-8') as f:
+                json.dump(proforma_doc, f, indent=2)
+            
+            # Generate HTML (using tax invoice template)
+            logger.info("  📝 Generating tax invoice HTML...")
+            generate_tax_invoice_html(json_file, html_file)
+            
+            # Generate PDF
+            logger.info("  📄 Converting to PDF...")
+            html_to_pdf(html_file, pdf_file)
+            
+            # Verify PDF file was created
+            if not os.path.exists(pdf_file):
+                raise Exception(f"PDF file was not created at {pdf_file}")
+            
+            # Get PDF file size
+            pdf_size_kb = os.path.getsize(pdf_file) / 1024
+            logger.info(f"  ✓ PDF generated: {pdf_size_kb:.1f} KB")
+            
+            # Send via Resend
+            if not RESEND_API_KEY:
+                raise HTTPException(
+                    status_code=500,
+                    detail="RESEND_API_KEY not configured"
+                )
+            
+            # Read PDF file as bytes
+            with open(pdf_file, 'rb') as f:
+                pdf_data = f.read()
+            
+            # Calculate totals for email body
+            totals = calculate_proforma_totals(proforma_doc['items'])
+            
+            # Send email to each recipient
+            sent_to = []
+            for recipient_email in recipient_emails:
+                logger.info(f"  📧 Sending to: {recipient_email}")
+                
+                params = {
+                    "from": FROM_EMAIL,
+                    "to": [recipient_email],
+                    "subject": f"Tax Invoice {request.invoice.number} - {proforma_doc['issued_to']['name']}",
+                    "html": f"""
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #333;">Tax Invoice</h2>
+                        <p>Dear {proforma_doc['issued_to']['name']},</p>
+                        <p>Please find attached your tax invoice.</p>
+                        
+                        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                            <strong>Invoice Number:</strong> {request.invoice.number}<br/>
+                            <strong>Date of Issuing:</strong> {request.invoice.date_of_issuing}<br/>
+                            <strong>Deal Number:</strong> {deal_number}<br/>
+                            <strong>Total Amount (AED):</strong> {totals['total_incl_vat']}<br/>
+                        </div>
+                        
+                        <p>Thank you for your business.</p>
+                        
+                        <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
+                        <p style="color: #666; font-size: 12px;">
+                            <strong>SUZANNE CODE JEWELLERY TRADING L.L.C.</strong><br/>
+                            Shop BF-05, Burj Khalifa, Dubai, UAE<br/>
+                            TRN: 104644174200003
+                        </p>
+                    </div>
+                    """,
+                    "attachments": [
+                        {
+                            "filename": f"TaxInvoice_{invoice_number_clean}.pdf",
+                            "content": list(pdf_data)
+                        }
+                    ]
+                }
+                
+                # Send email
+                email_response = resend.Emails.send(params)
+                sent_to.append(recipient_email)
+                logger.info(f"  ✓ Email sent to {recipient_email} (ID: {email_response.get('id', 'N/A')})")
+            
+            return {
+                "status": "success",
+                "message": "Tax invoice generated and sent successfully",
+                "invoice_number": request.invoice.number,
+                "deal_number": deal_number,
+                "pdf_filename": f"TaxInvoice_{invoice_number_clean}.pdf",
+                "pdf_size_kb": round(pdf_size_kb, 2),
+                "emails_sent_to": sent_to,
+                "total_aed": totals['total_incl_vat']
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error generating tax invoice: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating tax invoice: {str(e)}")
 
 @app.post("/test-token")
 def test_token(authorized: bool = Depends(verify_token)):

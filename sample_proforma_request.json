@@ -11,7 +11,8 @@
     "email": "valsudilovskaya@gmail.com"
   },
   "terms": {
-    "payment_terms": "Advance payment of 50% before Delivery"
+    "payment_terms": "Advance payment of 50% before Delivery",
+    "amount_paid": "0"
   },
   "items": [
     {
