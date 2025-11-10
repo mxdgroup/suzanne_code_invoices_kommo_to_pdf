@@ -4,7 +4,7 @@ aptPkgs = [
   "libpango-1.0-0",
   "libpangocairo-1.0-0",
   "libgdk-pixbuf2.0-0",
-  "libffi7",
+  "libffi8",
   "libglib2.0-0",
   "libgobject-2.0-0",
   "shared-mime-info",
