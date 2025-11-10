@@ -1,5 +1,15 @@
 [phases.setup]
-aptPkgs = ["libcairo2-dev", "libpango1.0-dev", "libgdk-pixbuf2.0-dev", "libffi-dev", "shared-mime-info"]
+aptPkgs = [
+  "libcairo2",
+  "libpango-1.0-0",
+  "libpangocairo-1.0-0",
+  "libgdk-pixbuf2.0-0",
+  "libffi7",
+  "libglib2.0-0",
+  "libgobject-2.0-0",
+  "shared-mime-info",
+  "fonts-liberation"
+]
 
 [start]
 cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
