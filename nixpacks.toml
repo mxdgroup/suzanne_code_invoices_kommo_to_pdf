@@ -13,6 +13,8 @@ nixPkgs = [
   "freetype",
   "libpng",
   "fribidi",
+  "gtk3",
+  "shared-mime-info",
   "libffi",
   "pkg-config"
 ]
@@ -25,9 +27,9 @@ cmds = [
 ]
 
 [variables]
-LD_LIBRARY_PATH = "/root/.nix-profile/lib:/nix/var/nix/profiles/default/lib:${LD_LIBRARY_PATH}"
-GI_TYPELIB_PATH = "/root/.nix-profile/lib/girepository-1.0:${GI_TYPELIB_PATH}"
-XDG_DATA_DIRS = "/root/.nix-profile/share:/usr/local/share:/usr/share:${XDG_DATA_DIRS}"
+LD_LIBRARY_PATH = "${HOME}/.nix-profile/lib:/nix/var/nix/profiles/default/lib:${LD_LIBRARY_PATH}"
+GI_TYPELIB_PATH = "${HOME}/.nix-profile/lib/girepository-1.0:${GI_TYPELIB_PATH}"
+XDG_DATA_DIRS = "${HOME}/.nix-profile/share:/usr/local/share:/usr/share:${XDG_DATA_DIRS}"
 PYTHONUNBUFFERED = "1"
 
 [start]
