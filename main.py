@@ -22,6 +22,7 @@ load_dotenv(dotenv_path=env_path)
 from generate_invoice import generate_html, calculate_item_totals
 from generate_proforma_invoice import generate_proforma_html, calculate_proforma_totals
 from convert_to_pdf import html_to_pdf
+from mongodb_helper import get_db_helper
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -88,6 +89,7 @@ class InvoiceRequest(BaseModel):
 class ProformaInvoiceInfo(BaseModel):
     number: str
     date_of_issuing: str
+    deal_number: str
 
 class ProformaIssuedTo(BaseModel):
     name: str
@@ -279,6 +281,21 @@ async def generate_proforma_invoice(
     try:
         logger.info(f"📄 Generating proforma invoice: {request.invoice.number}")
         
+        # Check and update MongoDB
+        db_helper = get_db_helper()
+        deal_number = request.invoice.deal_number
+        
+        # Prepare invoice data for database
+        invoice_data = request.dict(exclude={'recipient_emails'})
+        
+        # Check if deal number exists and update/insert
+        is_new, doc_id = db_helper.upsert_invoice(deal_number, invoice_data)
+        
+        if is_new:
+            logger.info(f"✓ Created new database record for deal number: {deal_number}")
+        else:
+            logger.info(f"✓ Updated existing database record for deal number: {deal_number}")
+        
         # Create temporary directory for this invoice
         with tempfile.TemporaryDirectory() as temp_dir:
             # Generate filenames based on invoice number
@@ -370,6 +387,9 @@ async def generate_proforma_invoice(
                 "status": "success",
                 "message": "Proforma invoice generated and sent successfully",
                 "invoice_number": request.invoice.number,
+                "deal_number": deal_number,
+                "database_operation": "created" if is_new else "updated",
+                "database_record_id": doc_id,
                 "pdf_filename": f"ProformaInvoice_{invoice_number_clean}.pdf",
                 "pdf_size_kb": round(pdf_size_kb, 2),
                 "emails_sent_to": sent_to,

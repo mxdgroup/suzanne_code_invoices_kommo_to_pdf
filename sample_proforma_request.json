@@ -1,7 +1,8 @@
 {
   "invoice": {
     "number": "00PI25-00000002",
-    "date_of_issuing": "October 12, 2025"
+    "date_of_issuing": "October 12, 2025",
+    "deal_number": "12342231890"
   },
   "issued_to": {
     "name": "Diachuk Valeriia",
