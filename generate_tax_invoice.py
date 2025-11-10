@@ -93,58 +93,20 @@ def generate_tax_invoice_html(json_file, output_html):
   .items th{{background:#e9eef2;font-weight:700}}
   .items td.center, .items th.center{{text-align:center}}
   .items td.right, .items th.right{{text-align:right}}
-  .note{{
-    margin-top:20px;
-    padding:14px;
-    background:#fef9e8;
-    border:1px solid #f0d881;
-    font-size:14px;
-    line-height:1.5
-  }}
-  .note b{{color:#c9781f}}
-  .totals{{
-    width:550px;
-    border-collapse:collapse;
-    margin:20px 0 20px auto;
-    font-size:15px
-  }}
-  .totals td{{
-    border:1px solid var(--border);
-    padding:11px 14px
-  }}
-  .totals td.label{{background:#f6f6f6;font-weight:700}}
-  .totals td.right{{text-align:right;font-weight:700}}
-  .terms{{
-    margin:20px 0;
-    padding:14px;
-    background:#e9eef2;
-    border:1px solid var(--border);
-    font-weight:400;
-    font-size:15px
-  }}
-  .released{{
-    display:flex;
-    align-items:flex-start;
-    justify-content:space-between;
-    margin-top:30px
-  }}
-  .released .label{{
-    background:#f6f6f6;
-    border:1px solid var(--border);
-    padding:10px 14px;
-    font-weight:700;
-    margin-bottom:10px
-  }}
-  .sign{{
-    display:block;
-    max-width:280px;
-    height:auto;
-    margin-top:10px
-  }}
-  .stamp{{
-    display:block;
-    max-width:200px;
-    height:auto
+  .note{{font-size:15px;margin-top:16px;border:1px solid var(--border);padding:11px 14px;background:#f6f6f6}}
+  .totals{{width:42%;margin-left:auto;margin-top:12px;border-collapse:collapse;font-size:15px}}
+  .totals td{{border:1px solid var(--border);padding:11px}}
+  .totals td.label{{font-weight:700;background:#f6f6f6;width:60%}}
+  .terms{{font-size:15px;margin-top:24px;font-weight:500}}
+  .released{{margin-top:75px;display:flex;gap:55px;align-items:flex-start;justify-content:space-between}}
+  .stamp{{height:210px;opacity:.95;object-fit:contain}}
+  .sign{{height:95px;margin-top:38px;object-fit:contain}}
+  .released .label{{background:transparent;border:none;padding:0;font-weight:700;font-size:15px}}
+  .footnote{{font-size:14px;margin-top:7px;color:#333}}
+  
+  @media print {{
+    body {{padding:0;background:#fff;}}
+    .page {{border:none;box-shadow:none;max-width:100%;}}
   }}
 </style>
 </head>
@@ -155,77 +117,63 @@ def generate_tax_invoice_html(json_file, output_html):
         <div>
           <div class="title">TAX INVOICE</div>
           <div class="meta">
-            <div class="number">No: {data['invoice']['number']}</div>
-            <div>Date: {data['invoice']['date_of_issuing']}</div>
+            <div class="number"># {data['invoice']['number']}</div>
+            <div class="date">{data['invoice']['date_of_issuing']}</div>
           </div>
         </div>
-        <img class="logo" src="{logo_path}" alt="Logo">
+        <img class="logo" src="{logo_path}" alt="Suzanne Code Jewelry logo">
       </div>
 
-      <div class="section-title">ISSUED BY</div>
+      <!-- Issued/Bill grid -->
       <table class="grid">
         <tr>
-          <td class="muted w-20">Name</td>
-          <td class="w-30">{issued_by['company_name']}</td>
-          <td class="muted w-20">Address</td>
-          <td class="w-30">{issued_by['address']}</td>
+          <th class="muted center" colspan="2">Issued By:</th>
+          <th class="muted center" colspan="2">Bill To:</th>
         </tr>
         <tr>
-          <td class="muted">TRN</td>
-          <td>{issued_by['trn']}</td>
-          <td class="muted">Tel</td>
-          <td>{issued_by['tel']}</td>
+          <td class="label w-20">{issued_by['company_name']}</td>
+          <td class="w-30 small">
+            <div><b>TRN:</b> {issued_by['trn']}</div>
+            <div><b>Address:</b> {issued_by['address']}</div>
+            <div><b>Tel.:</b> {issued_by['tel']}</div>
+            <div><b>E-mail:</b> {issued_by['email']}</div>
+          </td>
+          <td class="label w-20">{data['issued_to']['name']}</td>
+          <td class="w-30 small">
+            <div><b>TRN:</b> {data['issued_to'].get('trn', '')}</div>
+            <div><b>Address:</b> {data['issued_to']['address']}</div>
+            <div><b>E-mail:</b> {data['issued_to']['email']}</div>
+          </td>
         </tr>
         <tr>
-          <td class="muted">Email</td>
-          <td colspan="3">{issued_by['email']}</td>
+          <th class="muted center" colspan="2">Bank Details:</th>
+          <th class="muted center" colspan="2">Terms and Conditions</th>
+        </tr>
+        <tr>
+          <td class="label">{bank_details['bank_name']}</td>
+          <td class="small">
+            <div><b>IBAN:</b> {bank_details['iban']}</div>
+            <div><b>SWIFT:</b> {bank_details['swift']}</div>
+            <div><b>Beneficiary:</b> {bank_details['beneficiary']}</div>
+          </td>
+          <td class="label">Payment Terms:</td>
+          <td class="small">{data['terms']['payment_terms']}</td>
         </tr>
       </table>
 
-      <div class="section-title" style="margin-top:20px">ISSUED TO</div>
-      <table class="grid">
-        <tr>
-          <td class="muted w-20">Name</td>
-          <td class="w-30">{data['issued_to']['name']}</td>
-          <td class="muted w-20">Address</td>
-          <td class="w-30">{data['issued_to']['address']}</td>
-        </tr>
-        <tr>
-          <td class="muted">TRN</td>
-          <td>{data['issued_to']['trn']}</td>
-          <td class="muted">Email</td>
-          <td>{data['issued_to']['email']}</td>
-        </tr>
-      </table>
-
-      <div class="section-title" style="margin-top:20px">BANK DETAILS</div>
-      <table class="grid">
-        <tr>
-          <td class="muted w-20">Bank Name</td>
-          <td class="w-30">{bank_details['bank_name']}</td>
-          <td class="muted w-20">Beneficiary</td>
-          <td class="w-30">{bank_details['beneficiary']}</td>
-        </tr>
-        <tr>
-          <td class="muted">IBAN</td>
-          <td>{bank_details['iban']}</td>
-          <td class="muted">SWIFT Code</td>
-          <td>{bank_details['swift']}</td>
-        </tr>
-      </table>
-
+      <!-- Items table -->
       <table class="items">
         <thead>
           <tr>
-            <th class="center" style="width:50px">No</th>
-            <th style="min-width:280px">Description of Goods</th>
-            <th class="center" style="width:80px">Qty</th>
-            <th class="center" style="width:80px">Unit</th>
-            <th class="right" style="width:120px">Unit Price<br/>(Incl. VAT),<br/>(AED)</th>
-            <th class="center" style="width:90px">Discount<br/>(%)</th>
-            <th class="center" style="width:80px">VAT<br/>(%)</th>
-            <th class="right" style="width:120px">VAT<br/>Amount,<br/>(AED)</th>
-            <th class="right" style="width:130px">Total<br/>(Incl. VAT),<br/>(AED)</th>
+            <th class="center" style="width:55px">#</th>
+            <th>Description</th>
+            <th class="center" style="width:110px">Quantity</th>
+            <th class="center" style="width:95px">UOM</th>
+            <th class="right" style="width:150px">Price (Incl. VAT), (AED)</th>
+            <th class="center" style="width:105px">Discount, %</th>
+            <th class="center" style="width:95px">VAT, %</th>
+            <th class="right" style="width:150px">VAT Amount, (AED)</th>
+            <th class="right" style="width:150px">Amount, (AED)</th>
           </tr>
         </thead>
         <tbody>
