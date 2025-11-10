@@ -11,8 +11,6 @@ aptPkgs = [
   "libffi-dev",
   "libglib2.0-0",
   "libglib2.0-dev",
-  "libgobject-2.0-0",
-  "libgobject-2.0-dev",
   "libgirepository-1.0-1",
   "gir1.2-pango-1.0",
   "shared-mime-info",
