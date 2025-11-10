@@ -8,6 +8,11 @@ nixPkgs = [
   "gdk-pixbuf",
   "glib",
   "gobject-introspection",
+  "libxml2",
+  "libxslt",
+  "freetype",
+  "libpng",
+  "fribidi",
   "libffi",
   "pkg-config"
 ]
@@ -19,6 +24,12 @@ cmds = [
   "pip install --no-cache-dir -r requirements.txt"
 ]
 
+[variables]
+LD_LIBRARY_PATH = "/root/.nix-profile/lib:/nix/var/nix/profiles/default/lib:${LD_LIBRARY_PATH}"
+GI_TYPELIB_PATH = "/root/.nix-profile/lib/girepository-1.0:${GI_TYPELIB_PATH}"
+XDG_DATA_DIRS = "/root/.nix-profile/share:/usr/local/share:/usr/share:${XDG_DATA_DIRS}"
+PYTHONUNBUFFERED = "1"
+
 [start]
-cmd = "export LD_LIBRARY_PATH=/root/.nix-profile/lib:/nix/var/nix/profiles/default/lib:$LD_LIBRARY_PATH && export GI_TYPELIB_PATH=/root/.nix-profile/lib/girepository-1.0:$GI_TYPELIB_PATH && uvicorn main:app --host 0.0.0.0 --port $PORT"
+cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
 
