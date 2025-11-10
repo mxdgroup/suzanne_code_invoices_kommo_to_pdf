@@ -295,8 +295,8 @@ async def generate_proforma_invoice(
         db_helper = get_db_helper()
         deal_number = request.invoice.deal_number
         
-        # Prepare invoice data for database
-        invoice_data = request.dict(exclude={'recipient_emails'})
+        # Prepare invoice data for database (include ALL fields including recipient_emails)
+        invoice_data = request.dict()
         
         # Check if deal number exists and update/insert
         is_new, doc_id = db_helper.upsert_invoice(deal_number, invoice_data)
