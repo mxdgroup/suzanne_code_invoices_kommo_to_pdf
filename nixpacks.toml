@@ -1,8 +1,5 @@
 [phases.setup]
-nixPkgs = ["python310", "cairo", "pango", "gdk-pixbuf", "libffi", "gobject-introspection"]
-
-[phases.install]
-cmds = ["pip install --upgrade pip", "pip install -r requirements.txt"]
+nixPkgs = ["cairo", "pango", "gdk-pixbuf", "libffi", "gobject-introspection"]
 
 [start]
 cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
