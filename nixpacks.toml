@@ -1,5 +1,6 @@
 [phases.setup]
 nixPkgs = [
+  "python311",
   "cairo",
   "pango",
   "gdk-pixbuf",
@@ -7,6 +8,13 @@ nixPkgs = [
   "gobject-introspection",
   "libffi",
   "pkg-config"
+]
+
+[phases.install]
+cmds = [
+  "python3 -m venv --copies /opt/venv",
+  ". /opt/venv/bin/activate",
+  "pip install --no-cache-dir -r requirements.txt"
 ]
 
 [start]
