@@ -116,7 +116,7 @@ class ProformaInvoiceRequest(BaseModel):
     issued_to: ProformaIssuedTo
     terms: ProformaTerms
     items: List[ProformaItem]
-    amount_in_words: str
+    amount_in_words: Optional[str] = None  # Optional - will be auto-generated if not provided
     recipient_emails: List[EmailStr]  # List of emails to send invoice to
 
 # Tax Invoice Models (for updating proforma to tax invoice)

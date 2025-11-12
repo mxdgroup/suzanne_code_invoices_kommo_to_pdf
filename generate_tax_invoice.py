@@ -4,7 +4,7 @@ Tax Invoice HTML Generator
 Generates tax invoice HTML (based on proforma structure but labeled as TAX INVOICE)
 """
 import json
-from generate_proforma_invoice import calculate_proforma_totals, format_number
+from generate_proforma_invoice import calculate_proforma_totals, format_number, amount_to_words
 
 
 def generate_tax_invoice_html(json_file, output_html):
@@ -32,6 +32,9 @@ def generate_tax_invoice_html(json_file, output_html):
     
     # Calculate totals
     totals = calculate_proforma_totals(data['items'])
+    
+    # Generate amount in words from calculated total
+    amount_in_words_text = amount_to_words(totals['total_incl_vat_numeric'])
     
     # Get amount paid from terms (dynamic value from JSON)
     amount_paid_value = data['terms']['amount_paid']
@@ -179,7 +182,7 @@ def generate_tax_invoice_html(json_file, output_html):
         <tbody>
 {totals['rows']}
           <tr>
-            <td class="label center" colspan="9" style="text-align:left">Amount in Words:&nbsp;&nbsp;<span style="font-weight:700">{data['amount_in_words']}</span></td>
+            <td class="label center" colspan="9" style="text-align:left">Amount in Words:&nbsp;&nbsp;<span style="font-weight:700">{amount_in_words_text}</span></td>
           </tr>
         </tbody>
       </table>

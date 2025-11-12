@@ -4,10 +4,27 @@ Generate proforma invoice HTML from JSON data
 """
 import json
 import os
+from num2words import num2words
 
 def format_number(n, decimals=2):
     """Format number with thousands separator"""
     return f"{n:,.{decimals}f}"
+
+def amount_to_words(amount):
+    """Convert amount to words with proper formatting for AED
+    Example: 37920.00 -> "Thirty Seven Thousand Nine Hundred Twenty AED ONLY"
+    """
+    # Round to 2 decimal places to avoid floating point issues
+    amount = round(amount, 2)
+    
+    # Convert to words
+    words = num2words(amount, lang='en').title()
+    
+    # Format: capitalize each word and add "AED ONLY"
+    # Remove any "And" connectors for cleaner output
+    words = words.replace(" And ", " ")
+    
+    return f"{words} AED ONLY"
 
 def calculate_proforma_totals(items):
     """Calculate all totals from items for proforma invoice"""
@@ -65,7 +82,8 @@ def calculate_proforma_totals(items):
         'total_discount': format_number(total_discount, 2),
         'total_excl_vat': format_number(total_excl_vat, 2),
         'total_vat': format_number(total_vat, 2),
-        'total_incl_vat': format_number(total_incl_vat, 2)
+        'total_incl_vat': format_number(total_incl_vat, 2),
+        'total_incl_vat_numeric': total_incl_vat  # Raw numeric value for amount_to_words
     }
 
 def generate_proforma_html(json_file, output_html):
@@ -93,6 +111,9 @@ def generate_proforma_html(json_file, output_html):
     
     # Calculate totals
     totals = calculate_proforma_totals(data['items'])
+    
+    # Generate amount in words from calculated total
+    amount_in_words = amount_to_words(totals['total_incl_vat_numeric'])
     
     # Get amount paid from terms (dynamic value from JSON)
     amount_paid_value = data['terms']['amount_paid']
@@ -240,7 +261,7 @@ def generate_proforma_html(json_file, output_html):
         <tbody>
 {totals['rows']}
           <tr>
-            <td class="label center" colspan="9" style="text-align:left">Amount in Words:&nbsp;&nbsp;<span style="font-weight:700">{data['amount_in_words']}</span></td>
+            <td class="label center" colspan="9" style="text-align:left">Amount in Words:&nbsp;&nbsp;<span style="font-weight:700">{amount_in_words}</span></td>
           </tr>
         </tbody>
       </table>
