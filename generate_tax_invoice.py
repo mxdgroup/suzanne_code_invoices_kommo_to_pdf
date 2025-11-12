@@ -36,9 +36,6 @@ def generate_tax_invoice_html(json_file, output_html):
     # Generate amount in words from calculated total
     amount_in_words_text = amount_to_words(totals['total_incl_vat_numeric'])
     
-    # Get amount paid from terms (dynamic value from JSON)
-    amount_paid_value = data['terms']['amount_paid']
-    
     # Image paths - use absolute paths relative to the script location
     import pathlib
     script_dir = pathlib.Path(__file__).parent
@@ -160,7 +157,7 @@ def generate_tax_invoice_html(json_file, output_html):
             <div><b>Beneficiary:</b> {bank_details['beneficiary']}</div>
           </td>
           <td class="label">Payment Terms:</td>
-          <td class="small">{data['terms']['payment_terms']}</td>
+          <td class="small">Payment on Delivery</td>
         </tr>
       </table>
 
@@ -206,7 +203,7 @@ def generate_tax_invoice_html(json_file, output_html):
         </tr>
       </table>
 
-      <div class="terms">Terms and Conditions: {data['terms']['payment_terms']} <b>{amount_paid_value} AED</b></div>
+      <div class="terms">Terms and Conditions: Payment on Delivery</div>
 
       <div class="released">
         <div style="min-width:280px">
