@@ -3,7 +3,7 @@
 FastAPI Invoice Generator & Email Sender
 Generates PDF invoices from JSON and sends via Resend
 """
-from fastapi import FastAPI, HTTPException, Header, Depends, Query
+from fastapi import FastAPI, HTTPException, Header, Depends, Query, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
@@ -569,24 +569,13 @@ async def generate_tax_invoice(
         logger.error(f"❌ Error generating tax invoice: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating tax invoice: {str(e)}")
 
-@app.post("/webhook/generate-proforma")
-async def webhook_generate_proforma(token: str = Query(..., description="Webhook validation token")):
+def process_proforma_leads_background():
     """
-    Webhook endpoint to auto-generate proforma invoices
-    
-    Triggered by Kommo webhook with ?token=xxx
-    - Fetches leads from "Generate pro forma" status
-    - Processes up to 3 leads that don't have the "proforma" tag
-    - Generates and sends proforma invoices
-    - Adds "proforma" tag after successful processing
+    Background task to process proforma leads
+    This runs asynchronously after webhook response is sent
     """
     try:
-        # Validate webhook token
-        if token != WEBHOOK_TOKEN:
-            logger.warning(f"❌ Invalid webhook token attempted: {token}")
-            raise HTTPException(status_code=401, detail="Invalid webhook token")
-        
-        logger.info("🔔 Webhook triggered: generate-proforma")
+        logger.info("🔔 Background task started: generate-proforma")
         
         # Fetch leads from Generate pro forma status
         logger.info(f"📋 Fetching leads from status {GENERATE_PROFORMA_STATUS_ID}")
@@ -796,15 +785,46 @@ async def webhook_generate_proforma(token: str = Query(..., description="Webhook
         success_count = sum(1 for r in results if r['status'] == 'success')
         
         logger.info(f"\n{'='*60}")
-        logger.info(f"✅ Webhook completed: {success_count}/{len(results)} leads processed successfully")
+        logger.info(f"✅ Background task completed: {success_count}/{len(results)} leads processed successfully")
         logger.info('='*60)
+    
+    except Exception as e:
+        logger.error(f"❌ Background task error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
+@app.post("/webhook/generate-proforma")
+async def webhook_generate_proforma(
+    background_tasks: BackgroundTasks,
+    token: str = Query(..., description="Webhook validation token")
+):
+    """
+    Webhook endpoint to auto-generate proforma invoices
+    
+    Returns immediately (202 Accepted) and processes in background
+    
+    Triggered by Kommo webhook with ?token=xxx
+    - Validates token
+    - Starts background task
+    - Returns 202 immediately
+    - Background: Fetches leads, generates invoices, sends emails, adds tags
+    """
+    try:
+        # Validate webhook token
+        if token != WEBHOOK_TOKEN:
+            logger.warning(f"❌ Invalid webhook token attempted: {token}")
+            raise HTTPException(status_code=401, detail="Invalid webhook token")
         
+        logger.info("🔔 Webhook triggered: generate-proforma")
+        
+        # Add background task
+        background_tasks.add_task(process_proforma_leads_background)
+        
+        # Return immediately
         return {
-            "status": "success",
-            "message": f"Processed {success_count}/{len(results)} leads",
-            "leads_found": len(all_leads),
-            "leads_processed": len(results),
-            "results": results
+            "status": "accepted",
+            "message": "Webhook received. Processing leads in background."
         }
     
     except HTTPException:
