@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 KOMMO_SUBDOMAIN = os.getenv('KOMMO_SUBDOMAIN')
 KOMMO_ACCESS_TOKEN = os.getenv('KOMMO_ACCESS_TOKEN')
 
-GENERATE_PROFORMA_STATUS_ID = 94720975
+# Pipeline and Status IDs
+PIPELINE_ID = 11307791  # Main pipeline
+GENERATE_PROFORMA_STATUS_ID = 94720975  # "Generate pro forma" status
 
 headers = {
     'Authorization': f'Bearer {KOMMO_ACCESS_TOKEN}',
@@ -26,29 +28,59 @@ headers = {
 
 
 def get_leads_in_status(status_id, limit=250):
-    """Get leads in a specific status (filters client-side)"""
+    """
+    Get leads in a specific status using proper API filter
+    
+    Uses both pipeline_id and status_id in filter for accurate results
+    """
     url = f"https://{KOMMO_SUBDOMAIN}.kommo.com/api/v4/leads"
     
     try:
-        params = {
-            'with': 'contacts,catalog_elements,tags',
-            'limit': limit
-        }
+        all_leads = []
+        page = 1
+        max_pages = 10  # Safety limit
         
-        response = requests.get(url, headers=headers, params=params)
+        logger.info(f"Fetching leads in status {status_id}...")
         
-        if response.status_code == 204 or not response.text:
-            return []
+        while page <= max_pages:
+            # Include BOTH pipeline_id and status_id for filter to work
+            params = {
+                'filter[pipeline_id]': PIPELINE_ID,
+                'filter[statuses][0][pipeline_id]': PIPELINE_ID,
+                'filter[statuses][0][status_id]': status_id,
+                'with': 'contacts,catalog_elements,tags',
+                'limit': limit,
+                'page': page
+            }
+            
+            response = requests.get(url, headers=headers, params=params)
+            
+            if response.status_code == 204 or not response.text:
+                logger.info(f"  No more leads (page {page})")
+                break
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            leads = data.get('_embedded', {}).get('leads', [])
+            
+            if not leads:
+                break
+            
+            all_leads.extend(leads)
+            logger.info(f"  Page {page}: Fetched {len(leads)} leads (Total: {len(all_leads)})")
+            
+            # Check if there's a next page
+            links = data.get('_links', {})
+            if 'next' not in links:
+                logger.info(f"  No more pages")
+                break
+            
+            page += 1
         
-        response.raise_for_status()
-        data = response.json()
+        logger.info(f"✓ Found {len(all_leads)} leads in status {status_id}")
         
-        all_leads = data.get('_embedded', {}).get('leads', [])
-        
-        # Filter to ONLY leads with matching status_id
-        filtered_leads = [lead for lead in all_leads if lead.get('status_id') == status_id]
-        
-        return filtered_leads
+        return all_leads
     except Exception as e:
         logger.error(f"Error fetching leads: {e}")
         return []
