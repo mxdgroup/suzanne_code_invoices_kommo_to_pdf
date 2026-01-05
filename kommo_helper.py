@@ -379,28 +379,31 @@ def prepare_lead_for_proforma(lead):
         logger.warning(f"  Failed to fetch contact {contact_id}")
         return None
     
-    # Get products
+    # Get products with metadata (including quantity)
     catalog_elements = lead.get('_embedded', {}).get('catalog_elements', [])
     if not catalog_elements:
         logger.warning(f"  No products found for lead {lead_id}")
         return None
     
-    products = []
+    products_with_metadata = []
     for element in catalog_elements:
         catalog_id = element.get('metadata', {}).get('catalog_id')
         element_id = element.get('id')
+        quantity = element.get('metadata', {}).get('quantity', 1)  # Get quantity from metadata
         
         if catalog_id and element_id:
             product = get_catalog_element(catalog_id, element_id)
             if product:
-                products.append(product)
+                # Attach quantity from metadata to product
+                product['quantity'] = quantity
+                products_with_metadata.append(product)
     
-    if not products:
+    if not products_with_metadata:
         logger.warning(f"  No valid products found for lead {lead_id}")
         return None
     
     # Build proforma invoice JSON
-    invoice_json = build_proforma_invoice_json(lead, contact, products)
+    invoice_json = build_proforma_invoice_json(lead, contact, products_with_metadata)
     
     return invoice_json
 
@@ -527,28 +530,31 @@ def prepare_lead_for_tax_invoice(lead):
         logger.warning(f"  Failed to fetch contact {contact_id}")
         return None
     
-    # Get products
+    # Get products with metadata (including quantity)
     catalog_elements = lead.get('_embedded', {}).get('catalog_elements', [])
     if not catalog_elements:
         logger.warning(f"  No products found for lead {lead_id}")
         return None
     
-    products = []
+    products_with_metadata = []
     for element in catalog_elements:
         catalog_id = element.get('metadata', {}).get('catalog_id')
         element_id = element.get('id')
+        quantity = element.get('metadata', {}).get('quantity', 1)  # Get quantity from metadata
         
         if catalog_id and element_id:
             product = get_catalog_element(catalog_id, element_id)
             if product:
-                products.append(product)
+                # Attach quantity from metadata to product
+                product['quantity'] = quantity
+                products_with_metadata.append(product)
     
-    if not products:
+    if not products_with_metadata:
         logger.warning(f"  No valid products found for lead {lead_id}")
         return None
     
     # Build tax invoice JSON
-    invoice_json = build_tax_invoice_json(lead, contact, products)
+    invoice_json = build_tax_invoice_json(lead, contact, products_with_metadata)
     
     return invoice_json
 
