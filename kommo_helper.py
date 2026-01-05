@@ -234,16 +234,17 @@ def extract_discount_percentage(discount_value):
     
     if 'NO DISCOUNT' in discount_str:
         return 0
-    elif '5%' in discount_str or discount_str == '5':
-        return 5
-    elif '10%' in discount_str or discount_str == '10':
-        return 10
-    elif '15%' in discount_str or discount_str == '15':
-        return 15
+    # Check longer patterns first to avoid partial matches (e.g., "15%" contains "5%")
     elif '20%' in discount_str or discount_str == '20':
         return 20
+    elif '15%' in discount_str or discount_str == '15':
+        return 15
+    elif '10%' in discount_str or discount_str == '10':
+        return 10
+    elif '5%' in discount_str or discount_str == '5':
+        return 5
     else:
-        # Try to extract number
+        # Try to extract number using regex
         match = re.search(r'(\d+)', discount_str)
         if match:
             return int(match.group(1))
