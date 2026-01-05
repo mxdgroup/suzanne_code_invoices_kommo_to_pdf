@@ -20,6 +20,7 @@ KOMMO_ACCESS_TOKEN = os.getenv('KOMMO_ACCESS_TOKEN')
 # Pipeline and Status IDs
 PIPELINE_ID = 11307791  # Main pipeline
 GENERATE_PROFORMA_STATUS_ID = 94720975  # "Generate pro forma" status
+GENERATE_TAX_INVOICE_STATUS_ID = 94720977  # "Generate tax invoice" status (update with actual status ID)
 
 headers = {
     'Authorization': f'Bearer {KOMMO_ACCESS_TOKEN}',
@@ -400,6 +401,154 @@ def prepare_lead_for_proforma(lead):
     
     # Build proforma invoice JSON
     invoice_json = build_proforma_invoice_json(lead, contact, products)
+    
+    return invoice_json
+
+
+def generate_tax_invoice_number(lead_id):
+    """Generate tax invoice number based on lead ID"""
+    return f"TAXZS-{lead_id:05d}"
+
+
+def build_tax_invoice_json(lead, contact, products):
+    """Build tax invoice JSON from lead data"""
+    
+    lead_id = lead.get('id')
+    lead_custom_fields = lead.get('custom_fields_values', [])
+    contact_custom_fields = contact.get('custom_fields_values', [])
+    
+    # Invoice info
+    invoice_number = generate_tax_invoice_number(lead_id)
+    date_of_issuing = format_date()
+    deal_number = str(lead_id)
+    
+    # Customer info
+    customer_name = contact.get('name', '')
+    if not customer_name:
+        customer_name = lead.get('name', 'Customer')
+    
+    customer_address = get_field_value(lead_custom_fields, 'Delivery address') or ''
+    customer_email = get_field_value_by_code(contact_custom_fields, 'EMAIL') or ''
+    customer_trn = get_field_value(contact_custom_fields, 'TRN') or ''
+    
+    # Payment terms - always "Payment on Delivery" for tax invoices
+    payment_terms = 'Payment on Delivery'
+    
+    # Get discount percentage
+    discount_value = get_field_value(lead_custom_fields, 'Discount')
+    discount_pct = extract_discount_percentage(discount_value)
+    
+    # Build items list
+    items = []
+    for product in products:
+        # Product name as description
+        description = product.get('name', 'Product')
+        
+        # SKU or product details as sub-description
+        product_custom_fields = product.get('custom_fields_values', [])
+        sku = get_product_custom_field(product_custom_fields, 'SKU')
+        product_details = get_product_custom_field(product_custom_fields, 'Product Details')
+        
+        sub_description = sku or ''
+        if product_details:
+            sub_description = f"{sku}, {product_details}" if sku else product_details
+        
+        # Price (already includes VAT)
+        price_str = get_product_custom_field(product_custom_fields, 'Price (AED)') or '0'
+        try:
+            price_incl_vat_aed = float(str(price_str).replace(',', ''))
+        except:
+            price_incl_vat_aed = 0.0
+        
+        # Quantity
+        quantity = product.get('quantity', 1)
+        try:
+            quantity = float(quantity)
+        except:
+            quantity = 1.0
+        
+        # Unit of measure
+        uom = get_product_custom_field(product_custom_fields, 'Unit') or 'Pcs'
+        if not uom or uom == 'N/A':
+            uom = 'Pcs'
+        
+        item = {
+            'description': description,
+            'sub_description': sub_description,
+            'quantity': quantity,
+            'uom': uom,
+            'price_incl_vat_aed': price_incl_vat_aed,
+            'discount_pct': discount_pct,
+            'vat_pct': 5
+        }
+        
+        items.append(item)
+    
+    # Build complete JSON (using same structure as proforma but with different payment terms)
+    invoice_json = {
+        'invoice': {
+            'number': invoice_number,
+            'date_of_issuing': date_of_issuing,
+            'deal_number': deal_number
+        },
+        'issued_to': {
+            'name': customer_name,
+            'address': customer_address,
+            'trn': customer_trn,
+            'email': customer_email
+        },
+        'terms': {
+            'payment_terms': payment_terms,
+            'amount_paid': '0'  # Not used in tax invoices but kept for compatibility
+        },
+        'items': items,
+        'recipient_emails': [customer_email] if customer_email else []
+    }
+    
+    return invoice_json
+
+
+def prepare_lead_for_tax_invoice(lead):
+    """Prepare a single lead for tax invoice generation"""
+    lead_id = lead.get('id')
+    lead_name = lead.get('name', f'Lead #{lead_id}')
+    
+    logger.info(f"Processing lead {lead_id}: {lead_name}")
+    
+    # Get contact details
+    contact_links = lead.get('_embedded', {}).get('contacts', [])
+    if not contact_links:
+        logger.warning(f"  No contact found for lead {lead_id}")
+        return None
+    
+    contact_id = contact_links[0].get('id')
+    contact = get_contact(contact_id)
+    if not contact:
+        logger.warning(f"  Failed to fetch contact {contact_id}")
+        return None
+    
+    # Get products
+    catalog_elements = lead.get('_embedded', {}).get('catalog_elements', [])
+    if not catalog_elements:
+        logger.warning(f"  No products found for lead {lead_id}")
+        return None
+    
+    products = []
+    for element in catalog_elements:
+        catalog_id = element.get('metadata', {}).get('catalog_id')
+        element_id = element.get('id')
+        
+        if catalog_id and element_id:
+            product = get_catalog_element(catalog_id, element_id)
+            if product:
+                products.append(product)
+    
+    if not products:
+        logger.warning(f"  No valid products found for lead {lead_id}")
+        return None
+    
+    # Build tax invoice JSON
+    invoice_json = build_tax_invoice_json(lead, contact, products)
     
     return invoice_json
 

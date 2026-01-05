@@ -29,7 +29,9 @@ from kommo_helper import (
     has_tag, 
     add_tag_to_lead, 
     prepare_lead_for_proforma,
-    GENERATE_PROFORMA_STATUS_ID
+    prepare_lead_for_tax_invoice,
+    GENERATE_PROFORMA_STATUS_ID,
+    GENERATE_TAX_INVOICE_STATUS_ID
 )
 
 # Setup logging
@@ -825,6 +827,255 @@ async def webhook_generate_proforma(
         return {
             "status": "accepted",
             "message": "Webhook received. Processing leads in background."
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Webhook error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Webhook error: {str(e)}")
+
+def process_tax_invoice_leads_background():
+    """
+    Background task to process tax invoice leads
+    This runs asynchronously after webhook response is sent
+    """
+    try:
+        logger.info("🔔 Background task started: generate-tax-invoice")
+        
+        # Fetch leads from Generate tax invoice status
+        logger.info(f"📋 Fetching leads from status {GENERATE_TAX_INVOICE_STATUS_ID}")
+        all_leads = get_leads_in_status(GENERATE_TAX_INVOICE_STATUS_ID, limit=250)
+        
+        if not all_leads:
+            logger.info("✓ No leads found in Generate tax invoice status")
+            return {
+                "status": "success",
+                "message": "No leads to process",
+                "leads_processed": 0
+            }
+        
+        # Filter out leads that already have "tax_invoice" tag
+        leads_to_process = []
+        for lead in all_leads:
+            if not has_tag(lead, "tax_invoice"):
+                leads_to_process.append(lead)
+            else:
+                logger.info(f"  Skipping lead {lead.get('id')}: already has 'tax_invoice' tag")
+        
+        if not leads_to_process:
+            logger.info("✓ All leads already have 'tax_invoice' tag")
+            return {
+                "status": "success",
+                "message": "All leads already processed",
+                "leads_found": len(all_leads),
+                "leads_processed": 0
+            }
+        
+        # Limit to 3 leads
+        leads_to_process = leads_to_process[:3]
+        
+        logger.info(f"📊 Found {len(all_leads)} leads, {len(leads_to_process)} to process")
+        
+        # Process each lead
+        results = []
+        for lead in leads_to_process:
+            lead_id = lead.get('id')
+            lead_name = lead.get('name', f'Lead #{lead_id}')
+            
+            try:
+                logger.info(f"\n{'='*60}")
+                logger.info(f"Processing: {lead_name} (ID: {lead_id})")
+                logger.info('='*60)
+                
+                # Prepare invoice data
+                invoice_data = prepare_lead_for_tax_invoice(lead)
+                
+                if not invoice_data:
+                    logger.warning(f"  ⚠️ Could not prepare invoice data for lead {lead_id}")
+                    results.append({
+                        "lead_id": lead_id,
+                        "lead_name": lead_name,
+                        "status": "skipped",
+                        "reason": "Missing required data (contact or products)"
+                    })
+                    continue
+                
+                # Validate that we have recipient emails
+                if not invoice_data.get('recipient_emails'):
+                    logger.warning(f"  ⚠️ No recipient email for lead {lead_id}")
+                    results.append({
+                        "lead_id": lead_id,
+                        "lead_name": lead_name,
+                        "status": "skipped",
+                        "reason": "No recipient email"
+                    })
+                    continue
+                
+                # Create ProformaInvoiceRequest object (same structure works for tax invoices)
+                request = ProformaInvoiceRequest(**invoice_data)
+                
+                # Generate invoice
+                logger.info(f"  📄 Generating tax invoice: {request.invoice.number}")
+                
+                # Create temporary directory for this invoice
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    # Generate filenames
+                    invoice_number_clean = request.invoice.number.replace("/", "-").replace(" ", "_")
+                    json_file = os.path.join(temp_dir, f"{invoice_number_clean}.json")
+                    html_file = os.path.join(temp_dir, f"{invoice_number_clean}.html")
+                    pdf_file = os.path.join(temp_dir, f"{invoice_number_clean}.pdf")
+                    
+                    # Save JSON to file
+                    import json
+                    with open(json_file, 'w', encoding='utf-8') as f:
+                        json.dump(request.dict(exclude={'recipient_emails'}), f, indent=2)
+                    
+                    # Generate HTML (using TAX INVOICE template)
+                    logger.info("    📝 Generating HTML...")
+                    generate_tax_invoice_html(json_file, html_file)
+                    
+                    # Generate PDF
+                    logger.info("    📄 Converting to PDF...")
+                    html_to_pdf(html_file, pdf_file)
+                    
+                    # Verify PDF was created
+                    if not os.path.exists(pdf_file):
+                        raise Exception(f"PDF file was not created at {pdf_file}")
+                    
+                    pdf_size_kb = os.path.getsize(pdf_file) / 1024
+                    logger.info(f"    ✓ PDF generated: {pdf_size_kb:.1f} KB")
+                    
+                    # Send via Resend
+                    if not RESEND_API_KEY:
+                        raise Exception("RESEND_API_KEY not configured")
+                    
+                    # Read PDF file as bytes
+                    with open(pdf_file, 'rb') as f:
+                        pdf_data = f.read()
+                    
+                    # Calculate totals for email body
+                    totals = calculate_proforma_totals([item.dict() for item in request.items])
+                    
+                    # Send email to each recipient
+                    sent_to = []
+                    for recipient_email in request.recipient_emails:
+                        logger.info(f"    📧 Sending to: {recipient_email}")
+                        
+                        params = {
+                            "from": FROM_EMAIL,
+                            "to": [recipient_email],
+                            "subject": f"Tax Invoice {request.invoice.number} - {request.issued_to.name}",
+                            "html": f"""
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                                <h2 style="color: #333;">Tax Invoice</h2>
+                                <p>Dear {request.issued_to.name},</p>
+                                <p>Please find attached your tax invoice.</p>
+                                
+                                <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                                    <strong>Invoice Number:</strong> {request.invoice.number}<br/>
+                                    <strong>Date of Issuing:</strong> {request.invoice.date_of_issuing}<br/>
+                                    <strong>Total Amount (AED):</strong> {totals['total_incl_vat']}<br/>
+                                </div>
+                                
+                                <p>Thank you for your business.</p>
+                                
+                                <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
+                                <p style="color: #666; font-size: 12px;">
+                                    <strong>SUZANNE CODE JEWELLERY TRADING L.L.C.</strong><br/>
+                                    Shop BF-05, Burj Khalifa, Dubai, UAE<br/>
+                                    TRN: 104644174200003
+                                </p>
+                            </div>
+                            """,
+                            "attachments": [
+                                {
+                                    "filename": f"TaxInvoice_{invoice_number_clean}.pdf",
+                                    "content": list(pdf_data)
+                                }
+                            ]
+                        }
+                        
+                        # Send email
+                        email_response = resend.Emails.send(params)
+                        sent_to.append(recipient_email)
+                        logger.info(f"    ✓ Email sent to {recipient_email} (ID: {email_response.get('id', 'N/A')})")
+                
+                # Add "tax_invoice" tag to lead
+                logger.info(f"  🏷️  Adding 'tax_invoice' tag to lead {lead_id}")
+                tag_added = add_tag_to_lead(lead_id, "tax_invoice")
+                
+                if tag_added:
+                    logger.info(f"  ✓ Tag added successfully")
+                else:
+                    logger.warning(f"  ⚠️ Failed to add tag")
+                
+                # Record success
+                results.append({
+                    "lead_id": lead_id,
+                    "lead_name": lead_name,
+                    "status": "success",
+                    "invoice_number": request.invoice.number,
+                    "emails_sent_to": sent_to,
+                    "total_aed": totals['total_incl_vat'],
+                    "tag_added": tag_added
+                })
+                
+                logger.info(f"  ✅ Lead {lead_id} processed successfully")
+            
+            except Exception as e:
+                logger.error(f"  ❌ Error processing lead {lead_id}: {str(e)}")
+                results.append({
+                    "lead_id": lead_id,
+                    "lead_name": lead_name,
+                    "status": "error",
+                    "error": str(e)
+                })
+        
+        # Summary
+        success_count = sum(1 for r in results if r['status'] == 'success')
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"✅ Background task completed: {success_count}/{len(results)} leads processed successfully")
+        logger.info('='*60)
+    
+    except Exception as e:
+        logger.error(f"❌ Background task error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
+@app.post("/webhook/generate-tax-invoice")
+async def webhook_generate_tax_invoice(
+    background_tasks: BackgroundTasks,
+    token: str = Query(..., description="Webhook validation token")
+):
+    """
+    Webhook endpoint to auto-generate tax invoices
+    
+    Returns immediately (202 Accepted) and processes in background
+    
+    Triggered by Kommo webhook with ?token=xxx
+    - Validates token
+    - Starts background task
+    - Returns 202 immediately
+    - Background: Fetches leads, generates invoices, sends emails, adds tags
+    """
+    try:
+        # Validate webhook token
+        if token != WEBHOOK_TOKEN:
+            logger.warning(f"❌ Invalid webhook token attempted: {token}")
+            raise HTTPException(status_code=401, detail="Invalid webhook token")
+        
+        logger.info("🔔 Webhook triggered: generate-tax-invoice")
+        
+        # Add background task
+        background_tasks.add_task(process_tax_invoice_leads_background)
+        
+        # Return immediately
+        return {
+            "status": "accepted",
+            "message": "Webhook received. Processing tax invoice leads in background."
         }
     
     except HTTPException:
