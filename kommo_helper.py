@@ -20,7 +20,7 @@ KOMMO_ACCESS_TOKEN = os.getenv('KOMMO_ACCESS_TOKEN')
 # Pipeline and Status IDs
 PIPELINE_ID = 11307791  # Main pipeline
 GENERATE_PROFORMA_STATUS_ID = 94720975  # "Generate pro forma" status
-GENERATE_TAX_INVOICE_STATUS_ID = 94720977  # "Generate tax invoice" status (update with actual status ID)
+GENERATE_TAX_INVOICE_STATUS_ID = 95171727  # "Generate tax invoice" status
 
 headers = {
     'Authorization': f'Bearer {KOMMO_ACCESS_TOKEN}',
